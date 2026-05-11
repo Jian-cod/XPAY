@@ -3,27 +3,56 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-04-10" });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2024-06-20",
+});
 
 export async function POST(request: Request) {
-  const supabase = createRouteHandlerClient({ cookies });
-  const body = await request.json();
-
   try {
+    const supabase = createRouteHandlerClient({ cookies });
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    const { priceId } = body;
+
+    if (!priceId) {
+      return NextResponse.json(
+        { error: "Price ID is required" },
+        { status: 400 }
+      );
+    }
+
     const session = await stripe.checkout.sessions.create({
+      customer_email: user.email,
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
       mode: "subscription",
-      payment_method_types: ["card"],
-      line_items: [{
-        price: body.price_id,
-        quantity: 1,
-      }],
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/app?success=true`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/wallet?success=true`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing?canceled=true`,
-      metadata: { user_id: body.user_id, tier: body.tier },
+      metadata: {
+        userId: user.id,
+      },
     });
 
     return NextResponse.json({ sessionId: session.id });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Stripe error:", error);
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
   }
 }
