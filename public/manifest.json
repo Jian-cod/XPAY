@@ -1,0 +1,22 @@
+{
+  "name": "Xpay - Real Effort. Real Money.",
+  "short_name": "Xpay",
+  "description": "Complete surveys, AI training tasks, and micro-tasks to earn real cash.",
+  "start_url": "/app",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#22c55e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
