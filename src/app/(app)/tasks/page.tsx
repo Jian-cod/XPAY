@@ -86,25 +86,25 @@ export default function TasksPage() {
     <div className="p-6">
       <h1 className="mb-6 text-3xl font-bold">Earn Money</h1>
       
-      {/* CPX Research Surveys Banner */}
+      {/* CPX Research Surveys - Main Feature */}
       <div className="mb-8 p-6 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl text-white">
-        <h2 className="text-2xl font-bold mb-2">Paid Surveys Available!</h2>
-        <p className="mb-4">Complete surveys and earn guaranteed rewards. New surveys added daily.</p>
+        <h2 className="text-2xl font-bold mb-2">Paid Surveys</h2>
+        <p className="mb-4">The best way to earn! Complete surveys and get paid instantly.</p>
         <Link 
           href="/surveys"
           className="inline-block px-6 py-3 bg-white text-purple-600 font-bold rounded-xl hover:bg-gray-100 transition"
         >
-          Start Surveys →
+          Go to Surveys →
         </Link>
       </div>
 
-      {/* CPAGrip Offers */}
+      {/* CPAGrip Special Offers */}
       <h2 className="text-xl font-bold mb-4">Special Offers</h2>
       
       {offers.length === 0 ? (
         <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 text-center">
           <p className="text-gray-500">No special offers available in your region right now.</p>
-          <p className="text-sm text-gray-400 mt-2">Check back later or try the surveys above!</p>
+          <p className="text-sm text-gray-400 mt-2">Check out the surveys above for guaranteed earnings!</p>
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
