@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { Lock, Crown, Star } from 'lucide-react'
+import { Lock, Crown, Star, Zap } from 'lucide-react'
 
-interface Task {
+interface ExternalTask {
   id: string
   title: string
   description: string
@@ -14,8 +14,7 @@ interface Task {
   category: string
   provider: string
   external_url: string
-  proof_required: boolean
-  is_premium: boolean
+  min_tier: string
 }
 
 interface UserTask {
@@ -30,7 +29,7 @@ interface TierLimit {
 }
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([])
+  const [tasks, setTasks] = useState<ExternalTask[]>([])
   const [completedTasks, setCompletedTasks] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string>('')
@@ -42,7 +41,6 @@ export default function TasksPage() {
 
   useEffect(() => {
     fetchUserData()
-    fetchCompletedTasks()
   }, [])
 
   const fetchUserData = async () => {
@@ -55,7 +53,6 @@ export default function TasksPage() {
     
     setUserId(user.id)
 
-    // Get user tier
     const { data: profile } = await supabase
       .from('profiles')
       .select('tier')
@@ -65,7 +62,6 @@ export default function TasksPage() {
     const tier = profile?.tier || 'free'
     setUserTier(tier)
 
-    // Get tier limits
     const { data: tierData } = await supabase
       .from('tier_limits')
       .select('*')
@@ -74,7 +70,6 @@ export default function TasksPage() {
 
     setTierLimit(tierData)
 
-    // Get today's task count
     const today = new Date().toISOString().split('T')[0]
     const { data: dailyCount } = await supabase
       .from('daily_task_counts')
@@ -85,148 +80,63 @@ export default function TasksPage() {
 
     setTasksToday(dailyCount?.task_count || 0)
 
-    // Fetch tasks
-    await fetchTasks(tierData?.max_reward || 50)
+    await fetchExternalTasks(tier)
+    await fetchCompletedTasks(user.id)
   }
 
-  const fetchTasks = async (maxReward: number) => {
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('status', 'active')
-      .order('reward', { ascending: false })
+  const fetchExternalTasks = async (tier: string) => {
+    // Fetch from external APIs based on tier
+    const allTasks: ExternalTask[] = []
 
-    if (error) {
-      console.error(error.message)
-    } else {
-      // Mark tasks as premium if above tier limit
-      const processedTasks = (data || []).map(task => ({
-        ...task,
-        is_premium: task.reward > maxReward
-      }))
-      setTasks(processedTasks)
-    }
+    // CPAGrip offers
+    try {
+      const cpagripRes = await fetch(`/api/offers?userId=${userId}`)
+      const cpagripData = await cpagripRes.json()
+      if (cpagripData.offers) {
+        cpagripData.offers.forEach((offer: any) => {
+          const reward = Math.round(offer.payout * 130)
+          allTasks.push({
+            id: `cpagrip_${offer.id}`,
+            title: offer.title,
+            description: offer.description,
+            reward,
+            category: offer.category || 'Offer',
+            provider: 'CPAGrip',
+            external_url: offer.offerlink,
+            min_tier: reward >= 120 ? 'elite' : 'free'
+          })
+        })
+      }
+    } catch (e) { console.error('CPAGrip error:', e) }
 
+    // Filter by tier
+    const tierOrder = { free: 1, pro: 2, elite: 3 }
+    const userTierLevel = tierOrder[tier as keyof typeof tierOrder] || 1
+
+    const filteredTasks = allTasks.filter(task => {
+      const taskTierLevel = tierOrder[task.min_tier as keyof typeof tierOrder] || 1
+      return userTierLevel >= taskTierLevel
+    })
+
+    setTasks(filteredTasks)
     setLoading(false)
   }
 
-  const fetchCompletedTasks = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
+  const fetchCompletedTasks = async (uid: string) => {
     const { data, error } = await supabase
       .from('user_tasks')
       .select('task_id')
-      .eq('user_id', user.id)
+      .eq('user_id', uid)
 
     if (!error && data) {
       setCompletedTasks(data.map((item: UserTask) => item.task_id))
     }
   }
 
-  const completeTask = async (task: Task) => {
-    if (task.is_premium && userTier === 'free') {
-      return // Shouldn't happen due to UI, but safety check
-    }
-
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      router.push('/login')
-      return
-    }
-
-    if (completedTasks.includes(task.id)) {
-      alert('Task already completed.')
-      return
-    }
-
-    // Check daily limit
-    const today = new Date().toISOString().split('T')[0]
-    const { data: dailyCount } = await supabase
-      .from('daily_task_counts')
-      .select('task_count')
-      .eq('user_id', user.id)
-      .eq('task_date', today)
-      .single()
-
-    const currentCount = dailyCount?.task_count || 0
-    const maxTasks = tierLimit?.daily_tasks || 3
-
-    if (currentCount >= maxTasks) {
-      alert('Daily task limit reached. Upgrade your tier!')
-      return
-    }
-
-    const { error: taskError } = await supabase
-      .from('user_tasks')
-      .insert([
-        {
-          user_id: user.id,
-          task_id: task.id,
-          status: 'completed',
-          reward_paid: true,
-        },
-      ])
-
-    if (taskError) {
-      alert(taskError.message)
-      return
-    }
-
-    // Update daily count
-    if (dailyCount) {
-      await supabase
-        .from('daily_task_counts')
-        .update({ task_count: currentCount + 1 })
-        .eq('user_id', user.id)
-        .eq('task_date', today)
-    } else {
-      await supabase
-        .from('daily_task_counts')
-        .insert({ user_id: user.id, task_date: today, task_count: 1 })
-    }
-
-    // Calculate reward with multiplier
-    const multiplier = tierLimit?.task_multiplier || 1
-    const finalReward = task.reward * multiplier
-
-    // Update balance
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('balance')
-      .eq('id', user.id)
-      .single()
-
-    const currentBalance = Number(profile?.balance || 0)
-    const newBalance = currentBalance + finalReward
-
-    await supabase
-      .from('profiles')
-      .update({ balance: newBalance })
-      .eq('id', user.id)
-
-    // Record transaction
-    await supabase.from('transactions').insert([
-      {
-        user_id: user.id,
-        type: 'task_reward',
-        amount: finalReward,
-        description: `Reward from ${task.title} (${userTier} tier, ${multiplier}x)`,
-        status: 'completed',
-      },
-    ])
-
-    alert(`Task completed. KES ${finalReward} added to wallet.`)
-
-    setCompletedTasks((prev) => [...prev, task.id])
-    setTasksToday(prev => prev + 1)
-  }
-
   const getTierBadge = () => {
     switch(userTier) {
-      case 'pro': return <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-bold flex items-center gap-1"><Crown className="w-4 h-4"/> PRO</span>
-      case 'elite': return <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-bold flex items-center gap-1"><Star className="w-4 h-4"/> ELITE</span>
+      case 'elite': return <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-bold flex items-center gap-1"><Crown className="w-4 h-4"/> ELITE</span>
+      case 'pro': return <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-bold flex items-center gap-1"><Zap className="w-4 h-4"/> PRO</span>
       default: return <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-bold">FREE</span>
     }
   }
@@ -236,13 +146,13 @@ export default function TasksPage() {
   }
 
   const tasksRemaining = (tierLimit?.daily_tasks || 3) - tasksToday
-  const freeTasks = tasks.filter(t => !t.is_premium)
-  const premiumTasks = tasks.filter(t => t.is_premium)
+  const freeTasks = tasks.filter(t => t.min_tier === 'free')
+  const premiumTasks = tasks.filter(t => t.min_tier !== 'free')
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Available Tasks</h1>
+        <h1 className="text-3xl font-bold">Earn Money</h1>
         {getTierBadge()}
       </div>
 
@@ -276,15 +186,18 @@ export default function TasksPage() {
         )}
       </div>
 
-      {/* Free Tasks Section */}
+      {/* Available Tasks */}
       <div className="mb-8">
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+        <h2 className="text-xl font-bold mb-4">
           Available Tasks 
-          <span className="text-sm font-normal text-gray-500">(KES {tierLimit?.max_reward || 50} and below)</span>
+          <span className="text-sm font-normal text-gray-500 ml-2">(External providers - real money)</span>
         </h2>
 
-        {freeTasks.length === 0 ? (
-          <p className="text-gray-500 p-4 bg-gray-50 rounded-xl">No tasks available right now.</p>
+        {freeTasks.length === 0 && premiumTasks.length === 0 ? (
+          <div className="p-6 bg-gray-50 rounded-xl border text-center">
+            <p className="text-gray-500">Loading external offers...</p>
+            <p className="text-sm text-gray-400 mt-2">If none appear, check back later or try surveys.</p>
+          </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {freeTasks.map((task) => (
@@ -292,95 +205,95 @@ export default function TasksPage() {
                 key={task.id} 
                 task={task} 
                 completed={completedTasks.includes(task.id)}
-                onComplete={() => completeTask(task)}
                 disabled={tasksRemaining <= 0}
+                userTier={userTier}
+                tierLimit={tierLimit}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Premium Tasks Section - Locked for Free Users */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <Lock className="w-5 h-5 text-amber-500"/>
-            Premium Tasks
-            <span className="text-sm font-normal text-gray-500">(KES {(tierLimit?.max_reward || 50) + 1} and above)</span>
-          </h2>
-          
-          {userTier === 'free' && (
-            <Link 
-              href="/pricing"
-              className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold hover:bg-amber-600 transition"
-            >
-              Unlock →
-            </Link>
-          )}
-        </div>
+      {/* Premium Tasks - Locked for Free/Pro */}
+      {premiumTasks.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Lock className="w-5 h-5 text-amber-500"/>
+              Elite Tasks
+              <span className="text-sm font-normal text-gray-500">(KES 120+)</span>
+            </h2>
+            
+            {userTier !== 'elite' && (
+              <Link 
+                href="/pricing"
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 transition"
+              >
+                Upgrade to Elite →
+              </Link>
+            )}
+          </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {premiumTasks.map((task) => (
-            <div 
-              key={task.id} 
-              className={`rounded-xl border p-5 shadow-sm relative ${
-                userTier === 'free' ? 'opacity-60 grayscale' : ''
-              }`}
-            >
-              {userTier === 'free' && (
-                <div className="absolute inset-0 bg-gray-900/10 rounded-xl flex items-center justify-center z-10">
-                  <div className="bg-white p-4 rounded-xl shadow-lg text-center">
-                    <Lock className="w-8 h-8 text-amber-500 mx-auto mb-2"/>
-                    <p className="font-bold text-gray-900">Premium Task</p>
-                    <p className="text-sm text-gray-500 mb-3">Upgrade to Elite or Pro</p>
-                    <Link 
-                      href="/pricing"
-                      className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-bold hover:bg-amber-600 transition"
-                    >
-                      Upgrade
-                    </Link>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {premiumTasks.map((task) => (
+              <div 
+                key={task.id} 
+                className={`rounded-xl border p-5 shadow-sm relative ${
+                  userTier !== 'elite' ? 'opacity-60 grayscale' : ''
+                }`}
+              >
+                {userTier !== 'elite' && (
+                  <div className="absolute inset-0 bg-gray-900/10 rounded-xl flex items-center justify-center z-10">
+                    <div className="bg-white p-4 rounded-xl shadow-lg text-center">
+                      <Crown className="w-8 h-8 text-purple-600 mx-auto mb-2"/>
+                      <p className="font-bold text-gray-900">Elite Only</p>
+                      <p className="text-sm text-gray-500 mb-3">KES 120+ tasks</p>
+                      <Link 
+                        href="/pricing"
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 transition"
+                      >
+                        Upgrade to Elite
+                      </Link>
+                    </div>
                   </div>
+                )}
+
+                <h3 className="text-xl font-semibold">{task.title}</h3>
+                <p className="mt-2 text-sm text-gray-600">{task.description}</p>
+
+                <div className="mt-4 space-y-1 text-sm">
+                  <p className="text-lg">
+                    Reward: <strong className="text-green-600">KES {task.reward}</strong>
+                    {userTier === 'elite' && (
+                      <span className="text-purple-600 ml-2">
+                        (KES {Math.round(task.reward * 2)} with 2x)
+                      </span>
+                    )}
+                  </p>
+                  <p>Category: {task.category}</p>
+                  <p>Provider: {task.provider}</p>
                 </div>
-              )}
 
-              <h3 className="text-xl font-semibold">{task.title}</h3>
-              <p className="mt-2 text-sm text-gray-600">{task.description}</p>
-
-              <div className="mt-4 space-y-1 text-sm">
-                <p className="text-lg">
-                  Reward: <strong className="text-green-600">KES {task.reward}</strong>
-                  {userTier !== 'free' && (
-                    <span className="text-purple-600 ml-2">
-                      (KES {Math.round(task.reward * (tierLimit?.task_multiplier || 1))} with {tierLimit?.task_multiplier}x)
-                    </span>
-                  )}
-                </p>
-                <p>Category: {task.category}</p>
-                <p>Provider: {task.provider}</p>
+                {userTier === 'elite' && (
+                  <a
+                    href={task.external_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 block w-full text-center rounded-lg bg-black px-4 py-3 text-white transition hover:opacity-90"
+                  >
+                    Start Task
+                  </a>
+                )}
               </div>
-
-              {userTier !== 'free' && (
-                <button
-                  onClick={() => completeTask(task)}
-                  disabled={completedTasks.includes(task.id) || tasksRemaining <= 0}
-                  className="mt-4 w-full rounded-lg bg-black px-4 py-3 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {completedTasks.includes(task.id) ? 'Completed' : tasksRemaining <= 0 ? 'Daily Limit Reached' : 'Complete Task'}
-                </button>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-
-        {premiumTasks.length === 0 && (
-          <p className="text-gray-500 p-4 bg-gray-50 rounded-xl">No premium tasks available right now.</p>
-        )}
-      </div>
+      )}
 
       {/* Surveys Banner */}
       <div className="mt-8 p-6 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl text-white text-center">
-        <h2 className="text-2xl font-bold mb-2">Want More Earnings?</h2>
-        <p className="mb-4">Paid surveys available! Complete them and earn guaranteed rewards.</p>
+        <h2 className="text-2xl font-bold mb-2">Paid Surveys</h2>
+        <p className="mb-4">More earning opportunities available! Complete surveys from CPX Research.</p>
         <Link 
           href="/surveys"
           className="inline-block px-6 py-3 bg-white text-purple-600 font-bold rounded-xl hover:bg-gray-100 transition"
@@ -392,12 +305,16 @@ export default function TasksPage() {
   )
 }
 
-function TaskCard({ task, completed, onComplete, disabled }: { 
-  task: Task; 
-  completed: boolean; 
-  onComplete: () => void;
-  disabled: boolean;
+function TaskCard({ task, completed, disabled, userTier, tierLimit }: { 
+  task: ExternalTask
+  completed: boolean
+  disabled: boolean
+  userTier: string
+  tierLimit: TierLimit | null
 }) {
+  const multiplier = tierLimit?.task_multiplier || 1
+  const finalReward = Math.round(task.reward * multiplier)
+
   return (
     <div className="rounded-xl border bg-white p-5 shadow-sm">
       <h3 className="text-xl font-semibold">{task.title}</h3>
@@ -405,22 +322,26 @@ function TaskCard({ task, completed, onComplete, disabled }: {
 
       <div className="mt-4 space-y-1 text-sm">
         <p className="text-lg">
-          Reward: <strong className="text-green-600">KES {task.reward}</strong>
+          Reward: <strong className="text-green-600">KES {finalReward}</strong>
+          {multiplier > 1 && (
+            <span className="text-blue-600 ml-1 text-xs">({multiplier}x multiplier)</span>
+          )}
         </p>
         <p>Category: {task.category}</p>
         <p>Provider: {task.provider}</p>
       </div>
 
       <div className="mt-5 space-y-3">
-        <button
-          onClick={() => window.open(task.external_url, '_blank')}
-          className="w-full rounded-lg border px-4 py-3 transition hover:bg-gray-100"
+        <a
+          href={task.external_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block w-full text-center rounded-lg border px-4 py-3 transition hover:bg-gray-100"
         >
           Open Task
-        </button>
+        </a>
 
         <button
-          onClick={onComplete}
           disabled={completed || disabled}
           className="w-full rounded-lg bg-black px-4 py-3 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
