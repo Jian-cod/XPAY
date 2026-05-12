@@ -63,7 +63,7 @@ export default function PricingPage() {
     },
     {
       name: 'Pro',
-      price: 200,
+      price: 500,
       period: 'month',
       description: 'Earn more with better tasks',
       icon: <Zap className="w-6 h-6" />,
@@ -80,7 +80,7 @@ export default function PricingPage() {
     },
     {
       name: 'Elite',
-      price: 500,
+      price: 1200,
       period: 'month',
       description: 'Unlimited earning potential',
       icon: <Crown className="w-6 h-6" />,
@@ -110,7 +110,6 @@ export default function PricingPage() {
     }
 
     if (tier === 'free') {
-      // Downgrade
       const { error } = await supabase
         .from('profiles')
         .update({ tier: 'free' })
@@ -125,15 +124,11 @@ export default function PricingPage() {
       return;
     }
 
-    // For paid tiers, redirect to payment
-    // For now, we'll simulate payment with M-Pesa
     const confirmPayment = confirm(
-      `Upgrade to ${tier.toUpperCase()} for KES ${tier === 'pro' ? 200 : 500}/month?\n\nClick OK to simulate payment (M-Pesa integration coming soon).`
+      `Upgrade to ${tier.toUpperCase()} for KES ${tier === 'pro' ? 500 : 1200}/month?\n\nClick OK to simulate payment (M-Pesa integration coming soon).`
     );
 
     if (confirmPayment) {
-      // In production, this would open M-Pesa payment popup
-      // For now, we update tier directly
       const { error } = await supabase
         .from('profiles')
         .update({ tier: tier })
@@ -160,7 +155,6 @@ export default function PricingPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
             Upgrade Your Earnings
@@ -170,7 +164,6 @@ export default function PricingPage() {
           </p>
         </div>
 
-        {/* Tiers */}
         <div className="grid md:grid-cols-3 gap-8">
           {tiers.map((tier) => {
             const isCurrent = currentTier === tier.tier;
@@ -249,7 +242,6 @@ export default function PricingPage() {
           })}
         </div>
 
-        {/* FAQ */}
         <div className="mt-16 max-w-3xl mx-auto">
           <h2 className="text-2xl font-bold text-center mb-8">Frequently Asked Questions</h2>
           
