@@ -101,6 +101,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../src/app/(app)/surveys/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/surveys">> = Specific
+  const handler = {} as typeof import("../../src/app/(app)/surveys/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../src/app/(app)/tasks/page.tsx
 {
   type __IsExpected<Specific extends AppPageConfig<"/tasks">> = Specific
@@ -267,6 +276,51 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/marketplace">> = Specific
   const handler = {} as typeof import("../../src/app/api/marketplace/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/mpesa/token/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/mpesa/token">> = Specific
+  const handler = {} as typeof import("../../src/app/api/mpesa/token/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/offers/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/offers">> = Specific
+  const handler = {} as typeof import("../../src/app/api/offers/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/postback-cpx/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/postback-cpx">> = Specific
+  const handler = {} as typeof import("../../src/app/api/postback-cpx/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/postback-theorem/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/postback-theorem">> = Specific
+  const handler = {} as typeof import("../../src/app/api/postback-theorem/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/postback/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/postback">> = Specific
+  const handler = {} as typeof import("../../src/app/api/postback/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check
