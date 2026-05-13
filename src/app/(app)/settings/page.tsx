@@ -1,240 +1,247 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { 
-  User, 
-  Bell, 
-  Shield, 
-  CreditCard, 
-  Globe, 
-  Moon, 
-  Smartphone,
-  CheckCircle,
-  AlertTriangle
-} from "lucide-react";
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { Camera, Save, User, Mail, Phone, MapPin, Briefcase } from 'lucide-react';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"profile" | "notifications" | "security" | "payments">("profile");
-  const [darkMode, setDarkMode] = useState(false);
-  const [notifications, setNotifications] = useState({
-    taskAlerts: true,
-    withdrawalUpdates: true,
-    streakReminders: true,
-    marketingEmails: false,
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState({
+    full_name: '',
+    phone: '',
+    location: '',
+    bio: '',
+    avatar_url: ''
   });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  const router = useRouter();
+
+  useEffect(() => {
+    fetchUser();
+  }, []);
+
+  const fetchUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    setUser(user);
+
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (data) {
+      setProfile({
+        full_name: data.full_name || '',
+        phone: data.phone || '',
+        location: data.location || '',
+        bio: data.bio || '',
+        avatar_url: data.avatar_url || ''
+      });
+    }
+
+    setLoading(false);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setProfile({ ...profile, [e.target.name]: e.target.value });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage('');
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: profile.full_name,
+        phone: profile.phone,
+        location: profile.location,
+        bio: profile.bio,
+        avatar_url: profile.avatar_url,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', user.id);
+
+    if (error) {
+      setMessage('Error: ' + error.message);
+    } else {
+      setMessage('Profile saved successfully!');
+    }
+
+    setSaving(false);
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+    const filePath = `avatars/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file);
+
+    if (uploadError) {
+      setMessage('Upload error: ' + uploadError.message);
+      setUploading(false);
+      return;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
+
+    setProfile({ ...profile, avatar_url: publicUrl });
+    setUploading(false);
+    setMessage('Photo uploaded! Click Save to confirm.');
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Loading...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Settings</h2>
-        <p className="text-gray-500">Manage your account, preferences, and security.</p>
-      </div>
+    <div className="min-h-screen bg-gray-50 py-8 px-4">
+      <div className="max-w-2xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8">Settings</h1>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        {/* Tabs */}
-        <div className="flex border-b border-gray-100 overflow-x-auto">
-          {[
-            { id: "profile", label: "Profile", icon: User },
-            { id: "notifications", label: "Notifications", icon: Bell },
-            { id: "security", label: "Security", icon: Shield },
-            { id: "payments", label: "Payments", icon: CreditCard },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-6 py-4 text-sm font-medium whitespace-nowrap transition ${
-                activeTab === tab.id 
-                  ? "text-primary-600 border-b-2 border-primary-600" 
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          ))}
+        {message && (
+          <div className={`p-4 rounded-xl mb-6 ${message.includes('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+            {message}
+          </div>
+        )}
+
+        {/* Avatar */}
+        <div className="bg-white rounded-2xl border p-6 mb-6">
+          <h2 className="text-xl font-bold mb-4">Profile Photo</h2>
+          <div className="flex items-center gap-4">
+            <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+              {profile.avatar_url ? (
+                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-10 h-10 text-gray-400" />
+              )}
+            </div>
+            <div>
+              <label className="cursor-pointer px-4 py-2 bg-black text-white rounded-lg font-bold hover:bg-gray-800 transition inline-block">
+                {uploading ? 'Uploading...' : 'Change Photo'}
+                <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+              </label>
+            </div>
+          </div>
         </div>
 
-        <div className="p-6">
-          {activeTab === "profile" && (
-            <div className="space-y-6 max-w-lg">
-              <div className="flex items-center gap-4">
-                <div className="w-20 h-20 rounded-full bg-primary-100 flex items-center justify-center">
-                  <span className="text-2xl font-bold text-primary-700">JD</span>
-                </div>
-                <div>
-                  <button className="text-sm font-medium text-primary-600 hover:text-primary-700">Change Avatar</button>
-                  <p className="text-xs text-gray-500">JPG, PNG. Max 2MB.</p>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                  <input type="text" defaultValue="John Doe" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                  <input type="email" defaultValue="john@example.com" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-                  <input type="tel" defaultValue="+254 700 000 000" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
-                  <select className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition">
-                    <option>Kenya</option>
-                    <option>United States</option>
-                    <option>United Kingdom</option>
-                    <option>Nigeria</option>
-                    <option>South Africa</option>
-                    <option>Other</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Bio</label>
-                <textarea 
-                  rows={3}
-                  placeholder="Tell us about yourself..."
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition resize-none"
+        {/* Profile Info */}
+        <div className="bg-white rounded-2xl border p-6 mb-6">
+          <h2 className="text-xl font-bold mb-4">Profile Information</h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  name="full_name"
+                  value={profile.full_name}
+                  onChange={handleChange}
+                  placeholder="Your full name"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-black"
                 />
               </div>
-
-              <button className="px-6 py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 transition">
-                Save Changes
-              </button>
             </div>
-          )}
 
-          {activeTab === "notifications" && (
-            <div className="space-y-4 max-w-lg">
-              <ToggleRow 
-                icon={<Bell className="w-5 h-5" />}
-                title="Task Alerts"
-                desc="Get notified when new tasks are available"
-                enabled={notifications.taskAlerts}
-                onToggle={() => setNotifications({...notifications, taskAlerts: !notifications.taskAlerts})}
-              />
-              <ToggleRow 
-                icon={<CreditCard className="w-5 h-5" />}
-                title="Withdrawal Updates"
-                desc="Notifications about your withdrawal status"
-                enabled={notifications.withdrawalUpdates}
-                onToggle={() => setNotifications({...notifications, withdrawalUpdates: !notifications.withdrawalUpdates})}
-              />
-              <ToggleRow 
-                icon={<AlertTriangle className="w-5 h-5" />}
-                title="Streak Reminders"
-                desc="Daily reminder to complete a task and maintain your streak"
-                enabled={notifications.streakReminders}
-                onToggle={() => setNotifications({...notifications, streakReminders: !notifications.streakReminders})}
-              />
-              <ToggleRow 
-                icon={<Globe className="w-5 h-5" />}
-                title="Marketing Emails"
-                desc="Promotions, tips, and platform updates"
-                enabled={notifications.marketingEmails}
-                onToggle={() => setNotifications({...notifications, marketingEmails: !notifications.marketingEmails})}
-              />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="email"
+                  value={user?.email || ''}
+                  disabled
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border bg-gray-100 text-gray-500"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
             </div>
-          )}
 
-          {activeTab === "security" && (
-            <div className="space-y-6 max-w-lg">
-              <div className="bg-primary-50 border border-primary-200 rounded-xl p-4 flex items-center gap-3">
-                <CheckCircle className="w-5 h-5 text-primary-600 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-bold text-primary-700">Two-Factor Authentication</p>
-                  <p className="text-xs text-primary-600">Enabled via SMS</p>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
-                <input type="password" placeholder="••••••••" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
-                <input type="password" placeholder="••••••••" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
-                <input type="password" placeholder="••••••••" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-200 outline-none transition" />
-              </div>
-
-              <button className="px-6 py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 transition">
-                Update Password
-              </button>
-
-              <div className="border-t border-gray-100 pt-6">
-                <h4 className="font-bold text-danger-600 mb-2">Danger Zone</h4>
-                <button className="px-4 py-2 border border-danger-200 text-danger-600 rounded-lg text-sm font-medium hover:bg-danger-50 transition">
-                  Delete Account
-                </button>
-                <p className="text-xs text-gray-500 mt-2">This cannot be undone. Your points and history will be permanently deleted.</p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="tel"
+                  name="phone"
+                  value={profile.phone}
+                  onChange={handleChange}
+                  placeholder="+254..."
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-black"
+                />
               </div>
             </div>
-          )}
 
-          {activeTab === "payments" && (
-            <div className="space-y-6 max-w-lg">
-              <div>
-                <h4 className="font-bold text-gray-900 mb-4">M-Pesa</h4>
-                <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Smartphone className="w-5 h-5 text-primary-600" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">+254 700 000 000</p>
-                      <p className="text-xs text-gray-500">Default for Kenya withdrawals</p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded-full">Verified</span>
-                </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  name="location"
+                  value={profile.location}
+                  onChange={handleChange}
+                  placeholder="City, Country"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-black"
+                />
               </div>
-
-              <div>
-                <h4 className="font-bold text-gray-900 mb-4">PayPal</h4>
-                <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Globe className="w-5 h-5 text-blue-600" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">john@example.com</p>
-                      <p className="text-xs text-gray-500">Default for international withdrawals</p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded-full">Verified</span>
-                </div>
-              </div>
-
-              <button className="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:border-primary-400 hover:text-primary-600 transition">
-                + Add Payment Method
-              </button>
             </div>
-          )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Bio</label>
+              <div className="relative">
+                <Briefcase className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                <textarea
+                  name="bio"
+                  value={profile.bio}
+                  onChange={handleChange}
+                  placeholder="Tell us about yourself..."
+                  rows={4}
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-black"
+                />
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  );
-}
 
-function ToggleRow({ icon, title, desc, enabled, onToggle }: any) {
-  return (
-    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-      <div className="flex items-center gap-3">
-        <div className="text-gray-400">{icon}</div>
-        <div>
-          <p className="text-sm font-medium text-gray-900">{title}</p>
-          <p className="text-xs text-gray-500">{desc}</p>
-        </div>
+        {/* Save Button */}
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800 transition flex items-center justify-center gap-2"
+        >
+          <Save className="w-5 h-5" />
+          {saving ? 'Saving...' : 'Save Changes'}
+        </button>
       </div>
-      <button 
-        onClick={onToggle}
-        className={`w-12 h-6 rounded-full transition relative ${enabled ? "bg-primary-500" : "bg-gray-300"}`}
-      >
-        <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition ${enabled ? "left-6.5" : "left-0.5"}`} style={{ left: enabled ? "26px" : "2px" }} />
-      </button>
     </div>
   );
 }
