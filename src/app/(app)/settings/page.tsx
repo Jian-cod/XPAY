@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Camera, Save, User, Mail, Phone, MapPin, Briefcase } from 'lucide-react';
@@ -21,27 +21,31 @@ export default function SettingsPage() {
 
   const router = useRouter();
 
-  useEffect(() => {
-    fetchUser();
-  }, []);
-
-  const fetchUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+  // Use useCallback so we can call this again after save
+  const fetchUser = useCallback(async () => {
+    setLoading(true);
     
-    if (!user) {
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !authUser) {
       router.push('/login');
       return;
     }
 
-    setUser(user);
+    setUser(authUser);
 
-    const { data } = await supabase
+    // Fetch profile with explicit error handling
+    const { data, error } = await supabase
       .from('profiles')
-      .select('*')
-      .eq('id', user.id)
+      .select('full_name, phone, location, bio, avatar_url, tier, balance')
+      .eq('id', authUser.id)
       .single();
 
-    if (data) {
+    if (error) {
+      console.error('Profile fetch error:', error);
+      setMessage('Error loading profile: ' + error.message);
+    } else if (data) {
+      console.log('Profile loaded:', data); // Check browser console
       setProfile({
         full_name: data.full_name || '',
         phone: data.phone || '',
@@ -52,7 +56,25 @@ export default function SettingsPage() {
     }
 
     setLoading(false);
-  };
+  }, [router]);
+
+  // Load on mount AND when page becomes visible again
+  useEffect(() => {
+    fetchUser();
+
+    // Reload when user comes back to this tab/page
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchUser();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchUser]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setProfile({ ...profile, [e.target.name]: e.target.value });
@@ -61,6 +83,12 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     setMessage('');
+
+    if (!user?.id) {
+      setMessage('Error: Not logged in');
+      setSaving(false);
+      return;
+    }
 
     const { error } = await supabase
       .from('profiles')
@@ -75,9 +103,12 @@ export default function SettingsPage() {
       .eq('id', user.id);
 
     if (error) {
+      console.error('Save error:', error);
       setMessage('Error: ' + error.message);
     } else {
       setMessage('Profile saved successfully!');
+      // Reload to confirm it stuck
+      await fetchUser();
     }
 
     setSaving(false);
@@ -88,16 +119,20 @@ export default function SettingsPage() {
     if (!file) return;
 
     setUploading(true);
+    setMessage('');
 
     const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+    const fileName = `${user.id}-${Date.now()}.${fileExt}`;
     const filePath = `avatars/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from('avatars')
-      .upload(filePath, file);
+      .upload(filePath, file, {
+        upsert: true // Overwrite if exists
+      });
 
     if (uploadError) {
+      console.error('Upload error:', uploadError);
       setMessage('Upload error: ' + uploadError.message);
       setUploading(false);
       return;
@@ -107,7 +142,7 @@ export default function SettingsPage() {
       .from('avatars')
       .getPublicUrl(filePath);
 
-    setProfile({ ...profile, avatar_url: publicUrl });
+    setProfile(prev => ({ ...prev, avatar_url: publicUrl }));
     setUploading(false);
     setMessage('Photo uploaded! Click Save to confirm.');
   };
@@ -115,7 +150,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p>Loading...</p>
+        <p>Loading profile...</p>
       </div>
     );
   }
@@ -131,13 +166,23 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {/* Debug info - remove after testing */}
+        <div className="bg-yellow-50 p-3 rounded-lg mb-4 text-xs text-yellow-800">
+          <p>Debug: full_name = "{profile.full_name}" | avatar = "{profile.avatar_url ? 'yes' : 'no'}"</p>
+        </div>
+
         {/* Avatar */}
         <div className="bg-white rounded-2xl border p-6 mb-6">
           <h2 className="text-xl font-bold mb-4">Profile Photo</h2>
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
               {profile.avatar_url ? (
-                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                <img 
+                  src={profile.avatar_url} 
+                  alt="Avatar" 
+                  className="w-full h-full object-cover"
+                  onError={() => setProfile(prev => ({ ...prev, avatar_url: '' }))}
+                />
               ) : (
                 <User className="w-10 h-10 text-gray-400" />
               )}
@@ -182,7 +227,6 @@ export default function SettingsPage() {
                   className="w-full pl-10 pr-4 py-3 rounded-xl border bg-gray-100 text-gray-500"
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
             </div>
 
             <div>
