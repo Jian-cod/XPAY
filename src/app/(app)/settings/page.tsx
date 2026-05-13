@@ -21,7 +21,6 @@ export default function SettingsPage() {
 
   const router = useRouter();
 
-  // Use useCallback so we can call this again after save
   const fetchUser = useCallback(async () => {
     setLoading(true);
     
@@ -34,18 +33,42 @@ export default function SettingsPage() {
 
     setUser(authUser);
 
-    // Fetch profile with explicit error handling
+    // Try to get profile — if none exists, create one
     const { data, error } = await supabase
       .from('profiles')
       .select('full_name, phone, location, bio, avatar_url, tier, balance')
       .eq('id', authUser.id)
       .single();
 
-    if (error) {
+    if (error && error.code === 'PGRST116') {
+      // No row found — create one
+      console.log('No profile found, creating...');
+      const { error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: authUser.id,
+          email: authUser.email,
+          full_name: '',
+          phone: '',
+          location: '',
+          bio: '',
+          avatar_url: '',
+          tier: 'free',
+          balance: 0,
+          created_at: new Date().toISOString()
+        });
+
+      if (insertError) {
+        console.error('Insert error:', insertError);
+        setMessage('Error creating profile: ' + insertError.message);
+      } else {
+        setMessage('Profile created! Fill in your details.');
+      }
+    } else if (error) {
       console.error('Profile fetch error:', error);
-      setMessage('Error loading profile: ' + error.message);
+      setMessage('Error: ' + error.message);
     } else if (data) {
-      console.log('Profile loaded:', data); // Check browser console
+      console.log('Profile loaded:', data);
       setProfile({
         full_name: data.full_name || '',
         phone: data.phone || '',
@@ -58,22 +81,13 @@ export default function SettingsPage() {
     setLoading(false);
   }, [router]);
 
-  // Load on mount AND when page becomes visible again
   useEffect(() => {
     fetchUser();
-
-    // Reload when user comes back to this tab/page
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchUser();
-      }
+      if (document.visibilityState === 'visible') fetchUser();
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [fetchUser]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -90,24 +104,25 @@ export default function SettingsPage() {
       return;
     }
 
+    // Use upsert — creates if missing, updates if exists
     const { error } = await supabase
       .from('profiles')
-      .update({
+      .upsert({
+        id: user.id,
+        email: user.email,
         full_name: profile.full_name,
         phone: profile.phone,
         location: profile.location,
         bio: profile.bio,
         avatar_url: profile.avatar_url,
         updated_at: new Date().toISOString()
-      })
-      .eq('id', user.id);
+      }, { onConflict: 'id' });
 
     if (error) {
       console.error('Save error:', error);
       setMessage('Error: ' + error.message);
     } else {
       setMessage('Profile saved successfully!');
-      // Reload to confirm it stuck
       await fetchUser();
     }
 
@@ -127,12 +142,9 @@ export default function SettingsPage() {
 
     const { error: uploadError } = await supabase.storage
       .from('avatars')
-      .upload(filePath, file, {
-        upsert: true // Overwrite if exists
-      });
+      .upload(filePath, file, { upsert: true });
 
     if (uploadError) {
-      console.error('Upload error:', uploadError);
       setMessage('Upload error: ' + uploadError.message);
       setUploading(false);
       return;
@@ -166,7 +178,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Debug info - remove after testing */}
         <div className="bg-yellow-50 p-3 rounded-lg mb-4 text-xs text-yellow-800">
           <p>Debug: full_name = "{profile.full_name}" | avatar = "{profile.avatar_url ? 'yes' : 'no'}"</p>
         </div>
@@ -276,7 +287,6 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Save Button */}
         <button
           onClick={handleSave}
           disabled={saving}
