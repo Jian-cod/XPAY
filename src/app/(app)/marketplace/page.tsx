@@ -385,7 +385,7 @@ export default function MarketplacePage() {
                     <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded">GLOBAL</span>
                     {job.is_referral && (
                       <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded">
-                        XPAY EARNS ${job.referral_bonus}
+                        PARTNER
                       </span>
                     )}
                   </div>
@@ -428,14 +428,8 @@ export default function MarketplacePage() {
                       rel="noopener noreferrer"
                       className="block w-full text-center py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition"
                     >
-                      {job.is_referral ? 'Sign Up & Earn →' : 'Apply Now →'}
+                      {job.is_referral ? 'Sign Up →' : 'Apply Now →'}
                     </a>
-                  )}
-
-                  {job.is_referral && (
-                    <p className="text-xs text-gray-400 text-center mt-2">
-                      XPAY earns ${job.referral_bonus} when you sign up
-                    </p>
                   )}
                 </div>
               );
@@ -540,39 +534,20 @@ export default function MarketplacePage() {
         {/* REFERRAL PROGRAMS */}
         {activeSection === 'referrals' && (
           <div>
-            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-              <p className="text-sm text-blue-800">
-                <strong>How it works:</strong> Sign up on these platforms using the links below. When you complete tasks, <strong>XPAY earns a referral bonus</strong>. You earn directly from the platform, we earn from your signup. Win-win!
-              </p>
-            </div>
-
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {referrals.map(program => (
-                <div key={program.id} className="rounded-2xl border bg-white p-6 shadow-sm">
+                <div key={program.id} className="rounded-2xl border bg-white p-6 shadow-sm hover:shadow-md transition">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">
                       {program.name[0]}
                     </div>
                     <div>
-                      <h3 className="font-bold">{program.name}</h3>
+                      <h3 className="font-bold text-lg">{program.name}</h3>
                       <p className="text-xs text-gray-500">{program.category}</p>
                     </div>
                   </div>
 
-                  <p className="text-gray-600 text-sm mb-4">{program.description}</p>
-
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center gap-2 text-sm">
-                      <DollarSign className="w-4 h-4 text-green-600" />
-                      <span className="font-bold text-green-600">
-                        XPAY earns ${program.payout_amount} per signup
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <CheckCircle className="w-4 h-4" />
-                      <span>You need: {program.user_requirements}</span>
-                    </div>
-                  </div>
+                  <p className="text-gray-600 text-sm mb-6">{program.description}</p>
 
                   <a
                     href={program.referral_url}
@@ -580,12 +555,8 @@ export default function MarketplacePage() {
                     rel="noopener noreferrer"
                     className="block w-full text-center py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition"
                   >
-                    Sign Up & Start Earning →
+                    Sign Up →
                   </a>
-
-                  <p className="text-xs text-gray-400 text-center mt-2">
-                    Works in Kenya ✅
-                  </p>
                 </div>
               ))}
             </div>
