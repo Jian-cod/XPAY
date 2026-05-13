@@ -3,7 +3,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Camera, Save, User, Mail, Phone, MapPin, Briefcase } from 'lucide-react';
+import { 
+  Save, User, Mail, Phone, MapPin, Briefcase, 
+  LogOut, Trash2, Moon, Sun, Camera 
+} from 'lucide-react';
 
 export default function SettingsPage() {
   const [user, setUser] = useState<any>(null);
@@ -18,57 +21,34 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const router = useRouter();
 
+  useEffect(() => {
+    const saved = localStorage.getItem('darkMode');
+    if (saved === 'true') setDarkMode(true);
+  }, []);
+
   const fetchUser = useCallback(async () => {
     setLoading(true);
+    const { data: { user: authUser } } = await supabase.auth.getUser();
     
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !authUser) {
+    if (!authUser) {
       router.push('/login');
       return;
     }
 
     setUser(authUser);
 
-    // Try to get profile — if none exists, create one
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('profiles')
-      .select('full_name, phone, location, bio, avatar_url, tier, balance')
+      .select('full_name, phone, location, bio, avatar_url')
       .eq('id', authUser.id)
       .single();
 
-    if (error && error.code === 'PGRST116') {
-      // No row found — create one
-      console.log('No profile found, creating...');
-      const { error: insertError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authUser.id,
-          email: authUser.email,
-          full_name: '',
-          phone: '',
-          location: '',
-          bio: '',
-          avatar_url: '',
-          tier: 'free',
-          balance: 0,
-          created_at: new Date().toISOString()
-        });
-
-      if (insertError) {
-        console.error('Insert error:', insertError);
-        setMessage('Error creating profile: ' + insertError.message);
-      } else {
-        setMessage('Profile created! Fill in your details.');
-      }
-    } else if (error) {
-      console.error('Profile fetch error:', error);
-      setMessage('Error: ' + error.message);
-    } else if (data) {
-      console.log('Profile loaded:', data);
+    if (data) {
       setProfile({
         full_name: data.full_name || '',
         phone: data.phone || '',
@@ -77,17 +57,11 @@ export default function SettingsPage() {
         avatar_url: data.avatar_url || ''
       });
     }
-
     setLoading(false);
   }, [router]);
 
   useEffect(() => {
     fetchUser();
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') fetchUser();
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [fetchUser]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -98,13 +72,6 @@ export default function SettingsPage() {
     setSaving(true);
     setMessage('');
 
-    if (!user?.id) {
-      setMessage('Error: Not logged in');
-      setSaving(false);
-      return;
-    }
-
-    // Use upsert — creates if missing, updates if exists
     const { error } = await supabase
       .from('profiles')
       .upsert({
@@ -119,13 +86,10 @@ export default function SettingsPage() {
       }, { onConflict: 'id' });
 
     if (error) {
-      console.error('Save error:', error);
       setMessage('Error: ' + error.message);
     } else {
       setMessage('Profile saved successfully!');
-      await fetchUser();
     }
-
     setSaving(false);
   };
 
@@ -134,8 +98,6 @@ export default function SettingsPage() {
     if (!file) return;
 
     setUploading(true);
-    setMessage('');
-
     const fileExt = file.name.split('.').pop();
     const fileName = `${user.id}-${Date.now()}.${fileExt}`;
     const filePath = `avatars/${fileName}`;
@@ -159,16 +121,41 @@ export default function SettingsPage() {
     setMessage('Photo uploaded! Click Save to confirm.');
   };
 
+  const toggleDarkMode = () => {
+    const newMode = !darkMode;
+    setDarkMode(newMode);
+    localStorage.setItem('darkMode', String(newMode));
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!window.confirm('WARNING: This permanently deletes your account and all data. This cannot be undone. Are you sure?')) {
+      return;
+    }
+
+    await supabase.from('transactions').delete().eq('user_id', user.id);
+    await supabase.from('job_purchases').delete().eq('user_id', user.id);
+    await supabase.from('profiles').delete().eq('id', user.id);
+    
+    await supabase.auth.signOut();
+    alert('Account data deleted. Contact admin for complete removal.');
+    router.push('/');
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <p>Loading profile...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
+    <div className={`min-h-screen py-8 px-4 transition-colors ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold mb-8">Settings</h1>
 
@@ -178,22 +165,29 @@ export default function SettingsPage() {
           </div>
         )}
 
-        <div className="bg-yellow-50 p-3 rounded-lg mb-4 text-xs text-yellow-800">
-          <p>Debug: full_name = "{profile.full_name}" | avatar = "{profile.avatar_url ? 'yes' : 'no'}"</p>
+        {/* Dark Mode Toggle */}
+        <div className={`rounded-2xl border p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Appearance</h2>
+              <p className="text-sm text-gray-500">Toggle dark mode</p>
+            </div>
+            <button
+              onClick={toggleDarkMode}
+              className="p-3 rounded-xl bg-gray-100 hover:bg-gray-200 transition"
+            >
+              {darkMode ? <Sun className="w-6 h-6 text-yellow-500" /> : <Moon className="w-6 h-6 text-gray-600" />}
+            </button>
+          </div>
         </div>
 
         {/* Avatar */}
-        <div className="bg-white rounded-2xl border p-6 mb-6">
+        <div className={`rounded-2xl border p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
           <h2 className="text-xl font-bold mb-4">Profile Photo</h2>
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
               {profile.avatar_url ? (
-                <img 
-                  src={profile.avatar_url} 
-                  alt="Avatar" 
-                  className="w-full h-full object-cover"
-                  onError={() => setProfile(prev => ({ ...prev, avatar_url: '' }))}
-                />
+                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
                 <User className="w-10 h-10 text-gray-400" />
               )}
@@ -208,7 +202,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Profile Info */}
-        <div className="bg-white rounded-2xl border p-6 mb-6">
+        <div className={`rounded-2xl border p-6 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
           <h2 className="text-xl font-bold mb-4">Profile Information</h2>
           
           <div className="space-y-4">
@@ -287,14 +281,59 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Save Button */}
         <button
           onClick={handleSave}
           disabled={saving}
-          className="w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800 transition flex items-center justify-center gap-2"
+          className="w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800 transition flex items-center justify-center gap-2 mb-6"
         >
           <Save className="w-5 h-5" />
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
+
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className="w-full py-4 bg-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-300 transition flex items-center justify-center gap-2 mb-4"
+        >
+          <LogOut className="w-5 h-5" />
+          Log Out
+        </button>
+
+        {/* Delete Account */}
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          className="w-full py-4 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2"
+        >
+          <Trash2 className="w-5 h-5" />
+          Delete Account
+        </button>
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+              <h3 className="text-xl font-bold text-red-600 mb-2">Delete Account?</h3>
+              <p className="text-gray-600 mb-4">
+                This will permanently delete all your data. You will lose your balance, earnings, and progress. This cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 py-3 bg-gray-200 rounded-xl font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteAccount}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700"
+                >
+                  Yes, Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

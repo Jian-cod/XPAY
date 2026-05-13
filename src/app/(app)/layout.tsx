@@ -151,12 +151,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           {/* Page Content */}
           <main className="p-4 lg:p-8">
-            {/* KYC Warning Banner */}
+            
             <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-amber-800">KYC Verification Required</p>
-                <p className="text-xs text-amber-600">Complete identity verification to unlock withdrawals. Required by law.</p>
+                
               </div>
               <button className="px-4 py-2 text-sm font-medium text-amber-700 bg-amber-100 rounded-lg hover:bg-amber-200 transition">
                 Verify Now
