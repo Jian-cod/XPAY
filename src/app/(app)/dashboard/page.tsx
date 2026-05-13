@@ -1,5 +1,7 @@
-"use client";
+'use client';
 
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
 import { 
   TrendingUp, 
   Target, 
@@ -10,24 +12,111 @@ import {
   AlertCircle,
   Zap,
   ChevronRight,
-  Flame
+  Flame,
+  Wallet
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
-  const withdrawalProgress = 19.2;
-  const streakDays = 12;
-  const tasksCompleted = 47;
-  const approvalRate = 82;
-  const accountAge = 18;
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    balance: 0,
+    totalEarned: 0,
+    tasksCompleted: 0,
+    streakDays: 0,
+    accountAge: 0,
+    approvalRate: 0
+  });
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    setUser(user);
+
+    // Get profile
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (profileData) {
+      setProfile(profileData);
+    }
+
+    // Get transactions
+    const { data: txData } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    setTransactions(txData || []);
+
+    // Calculate stats
+    const allTx = txData || [];
+    const completedTasks = allTx.filter((t: any) => t.status === 'completed' && t.amount > 0).length;
+    const totalEarned = allTx.reduce((sum: number, t: any) => sum + (t.amount > 0 ? t.amount : 0), 0);
+    const balance = profileData?.balance || 0;
+    
+    // Account age in days
+    const createdAt = new Date(user.created_at);
+    const now = new Date();
+    const accountAge = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Streak (placeholder - you can implement real streak logic)
+    const streakDays = profileData?.streak_days || 0;
+
+    // Approval rate (completed / total * 100)
+    const totalTasks = allTx.filter((t: any) => t.type === 'task').length;
+    const approvedTasks = allTx.filter((t: any) => t.type === 'task' && t.status === 'completed').length;
+    const approvalRate = totalTasks > 0 ? Math.round((approvedTasks / totalTasks) * 100) : 0;
+
+    setStats({
+      balance,
+      totalEarned,
+      tasksCompleted: completedTasks,
+      streakDays,
+      accountAge,
+      approvalRate
+    });
+
+    setLoading(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Loading dashboard...</p>
+      </div>
+    );
+  }
+
+  const userName = profile?.full_name || user?.email?.split('@')[0] || 'User';
+  const withdrawalProgress = Math.min((stats.balance / 6500) * 100, 100);
 
   const requirements = [
-    { label: "Account Age", current: accountAge, target: 60, unit: "days", met: false },
-    { label: "Tasks Completed", current: tasksCompleted, target: 150, unit: "tasks", met: false },
-    { label: "Streak Maintained", current: streakDays, target: 30, unit: "days", met: false },
-    { label: "Approval Rate", current: approvalRate, target: 80, unit: "%", met: true },
-    { label: "Minimum Balance", current: 1250, target: 6500, unit: "pts", met: false },
-    { label: "Marketplace Purchase", current: 0, target: 1, unit: "item", met: false },
+    { label: "Account Age", current: stats.accountAge, target: 60, unit: "days", met: stats.accountAge >= 60 },
+    { label: "Tasks Completed", current: stats.tasksCompleted, target: 150, unit: "tasks", met: stats.tasksCompleted >= 150 },
+    { label: "Streak Maintained", current: stats.streakDays, target: 30, unit: "days", met: stats.streakDays >= 30 },
+    { label: "Approval Rate", current: stats.approvalRate, target: 80, unit: "%", met: stats.approvalRate >= 80 },
+    { label: "Minimum Balance", current: stats.balance, target: 6500, unit: "pts", met: stats.balance >= 6500 },
+    { label: "Marketplace Purchase", current: profile?.marketplace_purchases || 0, target: 1, unit: "item", met: (profile?.marketplace_purchases || 0) >= 1 },
     { label: "Registration Fee", current: 1, target: 1, unit: "paid", met: true },
   ];
 
@@ -36,34 +125,37 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Welcome Header */}
       <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Welcome back, John</h2>
-            <p className="text-gray-500 mt-1">Day {accountAge} of your grind. Keep pushing.</p>
+            <h2 className="text-2xl font-bold text-gray-900">Welcome back, {userName}</h2>
+            <p className="text-gray-500 mt-1">Day {stats.accountAge} of your grind. Keep pushing.</p>
           </div>
           <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 px-4 py-2 rounded-xl">
             <Flame className="w-5 h-5 text-orange-500" />
             <div>
-              <p className="text-sm font-bold text-orange-700">{streakDays} Day Streak</p>
+              <p className="text-sm font-bold text-orange-700">{stats.streakDays} Day Streak</p>
               <p className="text-xs text-orange-500">Miss 1 day = reset to 0</p>
             </div>
           </div>
         </div>
       </div>
 
+      {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={<TrendingUp className="w-5 h-5" />} label="Total Earnings" value="1,250 pts" sub="~KSH 1,625" color="primary" />
-        <StatCard icon={<Target className="w-5 h-5" />} label="Tasks Done" value="47" sub="of 150 required" color="blue" />
-        <StatCard icon={<Clock className="w-5 h-5" />} label="Time Invested" value="18d" sub="of 60 required" color="purple" />
-        <StatCard icon={<Shield className="w-5 h-5" />} label="Approval Rate" value="82%" sub="Target: 80%" color="green" />
+        <StatCard icon={<TrendingUp className="w-5 h-5" />} label="Total Earnings" value={`${stats.totalEarned.toLocaleString()} pts`} sub={`~KSH ${Math.round(stats.totalEarned * 1.3).toLocaleString()}`} color="primary" />
+        <StatCard icon={<Target className="w-5 h-5" />} label="Tasks Done" value={stats.tasksCompleted.toString()} sub="completed" color="blue" />
+        <StatCard icon={<Clock className="w-5 h-5" />} label="Time Invested" value={`${stats.accountAge}d`} sub="since joined" color="purple" />
+        <StatCard icon={<Shield className="w-5 h-5" />} label="Approval Rate" value={`${stats.approvalRate}%`} sub="quality score" color="green" />
       </div>
 
+      {/* Withdrawal Progress */}
       <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-lg font-bold text-gray-900">Withdrawal Progress</h3>
-            <p className="text-sm text-gray-500">Free Tier — KSH 6,500 minimum</p>
+            <p className="text-sm text-gray-500">{profile?.tier || 'Free'} Tier — KSH 6,500 minimum</p>
           </div>
           <div className="text-right">
             <p className="text-2xl font-bold text-gray-900">{metCount}/{totalCount}</p>
@@ -72,18 +164,18 @@ export default function DashboardPage() {
         </div>
 
         <div className="w-full bg-gray-100 rounded-full h-3 mb-6">
-          <div className="bg-primary-500 h-3 rounded-full transition-all duration-500" style={{ width: `${(metCount / totalCount) * 100}%` }} />
+          <div className="bg-green-500 h-3 rounded-full transition-all duration-500" style={{ width: `${(metCount / totalCount) * 100}%` }} />
         </div>
 
         <div className="grid md:grid-cols-2 gap-3">
           {requirements.map((req, i) => (
-            <div key={i} className={`flex items-center gap-3 p-3 rounded-xl ${req.met ? "bg-primary-50 border border-primary-200" : "bg-gray-50 border border-gray-100"}`}>
-              {req.met ? <CheckCircle className="w-5 h-5 text-primary-500 flex-shrink-0" /> : <Lock className="w-5 h-5 text-gray-400 flex-shrink-0" />}
+            <div key={i} className={`flex items-center gap-3 p-3 rounded-xl ${req.met ? "bg-green-50 border border-green-200" : "bg-gray-50 border border-gray-100"}`}>
+              {req.met ? <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" /> : <Lock className="w-5 h-5 text-gray-400 flex-shrink-0" />}
               <div className="flex-1">
-                <p className={`text-sm font-medium ${req.met ? "text-primary-700" : "text-gray-700"}`}>{req.label}</p>
+                <p className={`text-sm font-medium ${req.met ? "text-green-700" : "text-gray-700"}`}>{req.label}</p>
                 <p className="text-xs text-gray-500">{req.current} / {req.target} {req.unit}</p>
               </div>
-              {req.met && <span className="text-xs font-bold text-primary-600">DONE</span>}
+              {req.met && <span className="text-xs font-bold text-green-600">DONE</span>}
             </div>
           ))}
         </div>
@@ -91,38 +183,40 @@ export default function DashboardPage() {
         <div className="mt-6 p-4 bg-gray-50 rounded-xl">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-700">Estimated first withdrawal</p>
-              <p className="text-xs text-gray-500">Based on your current pace</p>
+              <p className="text-sm font-medium text-gray-700">Current Balance</p>
+              <p className="text-xs text-gray-500">Available for tasks & marketplace</p>
             </div>
-            <p className="text-lg font-bold text-gray-900">~Day 42</p>
+            <p className="text-lg font-bold text-gray-900">{stats.balance.toLocaleString()} pts</p>
           </div>
         </div>
       </div>
 
+      {/* Quick Actions */}
       <div className="grid md:grid-cols-3 gap-4">
-        <QuickActionCard icon={<Zap className="w-6 h-6" />} title="Daily Tasks" desc="1 task available today" href="/tasks" color="primary" />
-        <QuickActionCard icon={<Target className="w-6 h-6" />} title="Marketplace" desc="3 new items added" href="/marketplace" color="blue" />
-        <QuickActionCard icon={<TrendingUp className="w-6 h-6" />} title="Xpay Advance" desc="Access KSH 422 early" href="/advance" color="purple" />
+        <QuickActionCard icon={<Zap className="w-6 h-6" />} title="Daily Tasks" desc="Complete surveys & offers" href="/surveys" color="primary" />
+        <QuickActionCard icon={<Target className="w-6 h-6" />} title="Marketplace" desc="Jobs & premium listings" href="/marketplace" color="blue" />
+        <QuickActionCard icon={<Wallet className="w-6 h-6" />} title="Settings" desc="Update your profile" href="/settings" color="purple" />
       </div>
 
+      {/* Recent Activity */}
       <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
         <h3 className="text-lg font-bold text-gray-900 mb-4">Recent Activity</h3>
-        <div className="space-y-3">
-          <ActivityRow type="task" title="Survey: Consumer Preferences" time="2 hours ago" amount="+15 pts" status="approved" />
-          <ActivityRow type="task" title="AI Training: Image Label" time="5 hours ago" amount="+25 pts" status="pending" />
-          <ActivityRow type="disqualification" title="Survey: Tech Usage (Disqualified at 95%)" time="Yesterday" amount="0 pts" status="rejected" />
-          <ActivityRow type="streak" title="11-Day Streak Bonus" time="Yesterday" amount="+50 pts" status="approved" />
-        </div>
-      </div>
-
-      <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-bold text-red-700">Quality Strikes: 1 of 3</h4>
-            <p className="text-sm text-red-600 mt-1">You have 1 strike for low-quality AI training submissions. 3 strikes = 7-day task ban.</p>
+        {transactions.length === 0 ? (
+          <p className="text-gray-500 text-center py-8">No activity yet. Start completing tasks!</p>
+        ) : (
+          <div className="space-y-3">
+            {transactions.map((tx: any, i: number) => (
+              <ActivityRow 
+                key={i}
+                type={tx.type}
+                title={tx.description || 'Task completed'}
+                time={new Date(tx.created_at).toLocaleDateString()}
+                amount={tx.amount > 0 ? `+${tx.amount} pts` : `${tx.amount} pts`}
+                status={tx.status}
+              />
+            ))}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -163,17 +257,24 @@ function QuickActionCard({ icon, title, desc, href, color }: any) {
 
 function ActivityRow({ type, title, time, amount, status }: any) {
   const statusColors: any = {
-    approved: "text-green-600 bg-green-50",
+    completed: "text-green-600 bg-green-50",
     pending: "text-amber-600 bg-amber-50",
-    rejected: "text-red-600 bg-red-50",
+    failed: "text-red-600 bg-red-50",
   };
+  
+  const typeIcons: any = {
+    task: <Target className="w-5 h-5" />,
+    survey: <Zap className="w-5 h-5" />,
+    withdrawal: <Wallet className="w-5 h-5" />,
+    streak: <Flame className="w-5 h-5" />,
+    default: <CheckCircle className="w-5 h-5" />
+  };
+
   return (
     <div className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 transition">
       <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${statusColors[status]}`}>
-          {type === "task" && <Target className="w-5 h-5" />}
-          {type === "disqualification" && <AlertCircle className="w-5 h-5" />}
-          {type === "streak" && <Flame className="w-5 h-5" />}
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${statusColors[status] || statusColors.completed}`}>
+          {typeIcons[type] || typeIcons.default}
         </div>
         <div>
           <p className="text-sm font-medium text-gray-900">{title}</p>
